@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.5/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+      integrity="sha384-SgOJa3DmI69IUzQ2PVdRZhwQ+dy64/BUtbMJw1MZ8t5HZApcHrRKUc4W0kG879m7"
+      crossorigin="anonymous"
+    />
+    <title>Collaborative Editor with Username Bubbles</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        margin: 0;
+      }
+      #editor {
+        width: 99vw;
+        height: 88vh;
+        border: 1px solid #ccc;
+        padding: 10px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+        outline: none;
+        margin: 0.5rem;
+      }
+      .remote-cursor-wrapper {
+        position: absolute;
+        pointer-events: none;
+        z-index: 10;
+      }
+      .remote-cursor {
+        width: 2px;
+        background-color: red;
+        height: 1em;
+      }
+      .name-tag {
+        background: red;
+        color: white;
+        font-size: 12px;
+        padding: 2px 6px;
+        border-radius: 4px;
+        position: absolute;
+        bottom: 100%;
+        left: 0;
+        transform: translateY(-4px);
+        white-space: nowrap;
+      }
+      #wrapper {
+        position: relative;
+      }
+    </style>
+  </head>
+  <body>
+    <nav class="navbar navbar-expand-lg bg-body-tertiary">
+      <div class="container-fluid">
+        <a class="navbar-brand" href="#">{{ filename }}</a>
+        <button
+          class="navbar-toggler"
+          type="button"
+          data-bs-toggle="collapse"
+          data-bs-target="#navbarNavDropdown"
+          aria-controls="navbarNavDropdown"
+          aria-expanded="false"
+          aria-label="Toggle navigation"
+        >
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNavDropdown">
+          KEY : {{ room_name }}
+          <img
+            src="https://png.pngtree.com/png-clipart/20190619/original/pngtree-vector-copy-icon-png-image_4013516.jpg"
+            alt="CPY_BTN"
+            width="20px"
+            height="20px"
+            id="cpy_btn"
+          />
+        </div>
+        <button
+          type="button"
+          id="downloadBtn"
+          class="btn btn-success"
+          style="margin-right: 1rem"
+        >
+          Download
+        </button>
+        <button
+          type="button"
+          id="saveBtn"
+          class="btn btn-success"
+          style="margin-right: 1rem"
+        >
+          Save
+        </button>
+        <button
+          type="button"
+          id="clsBtn"
+          class="btn btn-outline-danger"
+          {{ close_btn_status }}
+        >
+          Close File & Disconnect
+        </button>
+      </div>
+      <button
+          type="button"
+          id="dltBtn"
+          class="btn btn-outline-danger"
+          style="display: {{ del_btn_display }};"
+        >
+          Delete
+        </button>
+    </nav>
+
+    <div id="wrapper">
+      <div id="editor" contenteditable="true">{{ content }}</div>
+    </div>
+
+    {{ room_name|json_script:"room-name" }}
+    {{ username|json_script:"username" }}
+
+    <script
+      src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.5/dist/js/bootstrap.bundle.min.js"
+      integrity="sha384-k6d4wzSIapyDyv1kpU366/PK5hCdSbCRGRCMv+eplOQJWyd1fbcAu9OCUj5zNLiq"
+      crossorigin="anonymous"
+    ></script>
+
+    <script>
+      const roomName = JSON.parse(
+        document.getElementById("room-name").textContent
+      );
+
+      const myuserName = JSON.parse(
+        document.getElementById("username").textContent
+      );
+
+      function getCursorPosition(contentEditableElement) {
+        let caretOffset = 0;
+        const selection = window.getSelection();
+
+        if (selection.rangeCount > 0) {
+          const range = selection.getRangeAt(0);
+          const preCaretRange = range.cloneRange();
+          preCaretRange.selectNodeContents(contentEditableElement);
+          preCaretRange.setEnd(range.endContainer, range.endOffset);
+          caretOffset = preCaretRange.toString().length;
+        }
+
+        return caretOffset;
+      }
+
+      function setCursorPosition(element, position) {
+        let range = document.createRange();
+        let sel = window.getSelection();
+
+        // Ensure the element has children or text content
+        if (element.childNodes.length > 0) {
+          let node = element.childNodes[0]; // Assuming first child is text
+          let textLength = node.textContent.length;
+
+          // Prevent setting position beyond text length
+          position = Math.min(position, textLength);
+
+          range.setStart(node, position);
+          range.setEnd(node, position);
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
+      }
+
+      const chatSocket = new WebSocket(
+        "ws://" + window.location.host + "/ws/chat/" + roomName + "/"
+      );
+      setTimeout(() => {
+        chatSocket.send(JSON.stringify({
+          msg:"connected",
+          username:myuserName
+        }));
+      },2000)
+
+      const editor = document.getElementById("editor");
+      editor.addEventListener("input", function () {
+        console.log("Content changed:", editor.innerText);
+      });
+
+      //send my cursor position to room
+      function logCursorPosition() {
+        chatSocket.send(
+          JSON.stringify({
+            msg: "content",
+            data: editor.innerText,
+          })
+        );
+      }
+      editor.addEventListener("click", logCursorPosition);
+      editor.addEventListener("keyup", logCursorPosition);
+      editor.addEventListener("select", logCursorPosition);
+
+      //editor navbar buttons events
+      const saveBtn = document.getElementById("saveBtn");
+      saveBtn.addEventListener("click", function () {
+        chatSocket.send(
+          JSON.stringify({
+            msg: "sv",
+            docID: roomName,
+            data: editor.innerText,
+            user:myuserName
+          })
+        );
+      });
+      const closeBtn = document.getElementById("clsBtn");
+      closeBtn.addEventListener("click", function () {
+        chatSocket.send(
+          JSON.stringify({
+            msg: "clsv",
+            docID: roomName,
+            data: editor.innerText,
+            user:myuserName
+          })
+        );
+      });
+      const dltBtn = document.getElementById("dltBtn");
+      dltBtn.addEventListener("click", function () {
+        chatSocket.send(
+          JSON.stringify({
+            msg: "dlt",
+            docID: roomName,
+            user:myuserName
+          })
+        );
+      });
+      const downloadBtn = document.getElementById("downloadBtn");
+      downloadBtn.addEventListener("click", function () {
+        window.location.href = "../../download/"+roomName;
+      });
+
+      //on message received from server
+      chatSocket.onmessage = function (e) {
+        const data = JSON.parse(e.data);
+        if (data.msg == "close_redirect") {
+          window.location.href = "../../../";
+          if (data.user != myuserName){
+            alert("File Saved and Closed by its Author ("+ data.user + ") !");
+          } else{
+            alert("File saved and closed successfully !");
+          }
+        } else if (data.msg == "del_redirect") {
+          window.location.href = "../../../";
+          if (data.user != myuserName){
+            alert("File Deleted and Closed by its Author ("+ data.user + ") !");
+          } else{
+            alert("File deleted successfully !");
+          }
+        } else if (data.msg == "cpos") {
+          let pos = data.pos;
+          let username = data.username;
+          if (username != myuserName) {
+            renderRemoteCursor(username, pos, username);
+          }
+        } else if (data.msg == "content") {
+          if (editor.innerText != data.data) {
+            let pos = getCursorPosition(editor);
+            let oldLength = editor.innerText.length;
+            editor.innerText = data.data;
+            if (editor.innerText.length >= oldLength) {
+              setCursorPosition(editor, pos);
+            } else {
+              setCursorPosition(editor, editor.innerText.length);
+            }
+          }
+        } else if (data.msg == "connected"){
+          if (data.user != myuserName){
+            alert(data.user + " Connected !")
+          }
+        } else if (data.msg == "saved"){
+          if (data.user == myuserName){
+            alert("File Saved !");
+          } else{
+            alert("File saved by " + data.user);
+          }
+        }
+      };
+
+      //on connection closed to server
+      chatSocket.onclose = function (e) {
+        console.error("Chat socket closed unexpectedly");
+      };
+
+      const wrapper = document.getElementById("wrapper");
+      const remoteCursors = {};
+
+      setInterval(() => {
+        let cpos = getCursorPosition(editor);
+        chatSocket.send(
+          JSON.stringify({
+            msg: "cpos",
+            pos: cpos,
+            username: myuserName,
+          })
+        );
+      }, 1000);
+
+      //to render collaborator's cursor
+      function renderRemoteCursor(userId, charIndex, username, clr) {
+        // Remove old cursor
+        if (remoteCursors[userId]) {
+          remoteCursors[userId].remove();
+        }
+
+        const range = getCaretRangeFromIndex(editor, charIndex);
+        if (!range) return;
+
+        const rect = range.getBoundingClientRect();
+        const editorRect = editor.getBoundingClientRect();
+
+        const wrapperDiv = document.createElement("div");
+        wrapperDiv.className = "remote-cursor-wrapper";
+        wrapperDiv.style.left =
+          rect.left - editorRect.left + editor.scrollLeft + "px";
+        wrapperDiv.style.top =
+          rect.top - editorRect.top + editor.scrollTop + "px";
+
+        const cursor = document.createElement("div");
+        cursor.className = "remote-cursor";
+        cursor.style.backgroundColor = "#007700";
+
+        const nameTag = document.createElement("div");
+        nameTag.className = "name-tag";
+        nameTag.textContent = username;
+        nameTag.style.background = "#007700";
+
+        wrapperDiv.appendChild(nameTag);
+        wrapperDiv.appendChild(cursor);
+        remoteCursors[userId] = wrapperDiv;
+        wrapper.appendChild(wrapperDiv);
+      }
+
+      function getCaretRangeFromIndex(container, index) {
+        let nodeStack = [container];
+        let count = 0;
+        let node;
+
+        while (nodeStack.length > 0) {
+          node = nodeStack.pop();
+
+          if (node.nodeType === Node.TEXT_NODE) {
+            let textLength = node.textContent.length;
+            if (count + textLength >= index) {
+              const range = document.createRange();
+              range.setStart(node, index - count);
+              range.setEnd(node, index - count);
+              return range;
+            }
+            count += textLength;
+          } else if (node.nodeType === Node.ELEMENT_NODE && node.childNodes) {
+            for (let i = node.childNodes.length - 1; i >= 0; i--) {
+              nodeStack.push(node.childNodes[i]);
+            }
+          }
+        }
+
+        return null;
+      }
+
+      function copyID() {
+        try {
+         navigator.clipboard.writeText(roomName);
+         alert("KEY copied to clipboard !") 
+        } catch (error) {
+          alert(error)
+        }
+      }
+
+      const copyBtn = document.getElementById("cpy_btn");
+      copyBtn.addEventListener("click", copyID);
+    </script>
+  </body>
+</html>

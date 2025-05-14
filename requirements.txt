@@ -1,0 +1,5 @@
+django
+tzdata
+channels[daphne]
+channels_redis
+mysqlclient
